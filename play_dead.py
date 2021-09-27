@@ -1,7 +1,11 @@
 #! /usr/bin/env python
 import argparse
+from contextlib import redirect_stdout
+import io
+import random
 import re
 import sys
+import vlc
 from internetarchive import *
 
 DEFAULT_QUERY_STRING = "collection:(GratefulDead) AND Subject:(Soundboard)"
@@ -56,6 +60,26 @@ def build_query_string(args):
     return query_string
 
 
+def get_show_identifier(query_string):
+    archive_session = get_session()
+    archive_session.mount_http_adapter()
+    search_results = list(archive_session.search_items(query_string))
+    if len(search_results) > 0: 
+        rand_index = random.randint(0, len(search_results))
+        show_identifier = search_results[rand_index]["identifier"]
+        return show_identifier
+    else:
+        sys.exit("No search results for query string:", query_string)
+
+
+def get_track_urls(show_identifier):
+        url_buffer = io.StringIO()
+        with redirect_stdout(url_buffer):
+            download(show_identifier, glob_pattern= "*mp3", dry_run= True, ignore_errors= True)
+            track_urls = url_buffer.getvalue().splitlines()
+            return track_urls
+
+
 def play_dead():
     parser = argparse.ArgumentParser(description="play-dead argument parser")
     parser.add_argument("-y", "--year", 
@@ -74,7 +98,15 @@ def play_dead():
         sys.exit("please supply only one out of: --year, --date, --range")
 
     query_string = build_query_string(args)
-    print(query_string)
+    show_identifier = get_show_identifier(query_string)
+    track_urls = get_track_urls(show_identifier)
+
+    player = vlc.Instance()
+    for url in track_urls:
+        media = player.media_new(url)
+        media_player = player.media_player_new()
+        media_player.set_media(media)
+        media_player.play()
 
 
 if __name__ == '__main__':
